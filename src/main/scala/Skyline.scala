@@ -80,39 +80,29 @@ object SFSSkylineCalculation extends Serializable {
     }
     skyline.toIterator
   }
-
-  def calculatePartition(previous: ArrayBuffer[Array[Double]], newPartition: Iterator[Array[Double]] ): Iterator[Array[Double]] = {
-    var isEmpty = false
-    val array = newPartition.toArray
-    if (previous.isEmpty){
-      previous += array(0)
-      isEmpty = true
-    }
-    for(i <- 1 until array.length) {
-      var j = 0
-      var breakFlag = false
-      breakable{
-        while(j < previous.length){
-          if(dominationCondition.dominates(array(i), previous(j))){
-            previous.remove(j)
-            j -= 1
-          }
-          else if (dominationCondition.dominates(previous(j), array(i))){
-            breakFlag = true
-            break()
-          }
-          if (isEmpty && i==0){
-            breakFlag = true
-            break()
-          }
+  
+  def addScore(array:Iterator[Array[Double]]): Iterator[(Array[Double], Double)] ={
+    array.map(x => (x, 0))
+      .map(x => {
+        var sum = 0.0
+        for (i<-0 to x._1.length - 1) {
+          sum += math.log(x._1(i) + 1)
         }
-        j += 1
-      }
-      if (!breakFlag) {
-        previous += array(i)
-      }
-    }
-    previous.toIterator
+        (x._1, sum)
+      })
+  }
+
+  def sortByScore(iterator:Iterator[(Array[Double], Double)]): Iterator[(Array[Double], Double)] ={
+    var array = iterator.toArray
+    array.sortBy(x => - x._2)
+    return array.toIterator
+  }
+
+  def addScoreAndCalculate(x: Iterator[(Array[Double])]): Iterator[Array[Double]] ={
+    val score = addScore(x)
+    val sortedScore = sortByScore(score)
+    val result = calculate(sortedScore.map(x => x._1))
+    return result.take(5)
   }
 }
 
