@@ -177,16 +177,19 @@ object Skyline {
 
     //List.range(0, grid.numPartitions).foreach(i=>println(df2.glom().collect()(i).length))
 
-    // Test for ALS algorithm
+    // Test for ALS algorithm //
+    
+    // Select top k with the best score
+    val k = 5
 
     val rdd2 = rdd.mapPartitions(SFSSkylineCalculation.calculate)
-    val partialSkylines2 = rdd2.collect()
-    val skyline2 = sc.parallelize(partialSkylines2).repartition(1).mapPartitions(SFSSkylineCalculation.calculate)
+    val partialSkylines2 = rdd2.collect().take(k)
+    val skyline2 = sc.parallelize(partialSkylines2).repartition(1).mapPartitions(SFSSkylineCalculation.addScoreAndCalculate)
     println("Default partitioning: number of local skylines: "+skyline2.count())
 
     //skyline2.map(row => (row.toArray.mkString(" "))).saveAsTextFile("ALS")
 
-    val rdd3 = partitionedFilteredPoints.mapPartitions(SFSSkylineCalculation.calculate).collect()
+    val rdd3 = partitionedFilteredPoints.mapPartitions(SFSSkylineCalculation.addScoreAndCalculate).collect().take(k)
     val partialSkylines3 = sc.parallelize(rdd3, 1).repartition(1)
     val skyline3 = partialSkylines3.mapPartitions(SFSSkylineCalculation.calculate)
     println("Grid partitioning: number of local skylines: "+skyline3.count())
