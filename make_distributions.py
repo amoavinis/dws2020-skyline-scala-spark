@@ -49,11 +49,13 @@ def write_to_file(points, distribution):
 #plt.scatter(l[:, 2], l[:, 1])
 #plt.show()
 
-data = pd.read_csv('gaussian2.csv', header=None).to_numpy()
-plt.scatter(data[:, 0], data[:, 1])
-plt.show()
+def view():
+    data = pd.read_csv('gaussian2.csv', header=None).to_numpy()
+    plt.scatter(data[:, 0], data[:, 1])
+    plt.show()
 
 #write_to_file(correlated(5, 1000000), "correlated")
 #write_to_file(anticorrelated(5, 1000000), "anticorrelated")
-#write_to_file(gaussian(2, 10), "gaussian")
+#write_to_file(gaussian(2, 50), "gaussian")
+view()
 #write_to_file(uniform(5, 1000000), "uniform")

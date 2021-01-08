@@ -1,2 +1,2 @@
-[debug] Created transactional ClassFileManager with tempDir = /home/angel/IdeaProjects/Skyline/project/target/scala-2.12/sbt-1.0/classes.bak
-[debug] Removing the temporary directory used for backing up class files: /home/angel/IdeaProjects/Skyline/project/target/scala-2.12/sbt-1.0/classes.bak
+[debug] Created transactional ClassFileManager with tempDir = /home/angel/IdeaProjects/dws2020-skyline-scala-spark/project/target/scala-2.12/sbt-1.0/classes.bak
+[debug] Removing the temporary directory used for backing up class files: /home/angel/IdeaProjects/dws2020-skyline-scala-spark/project/target/scala-2.12/sbt-1.0/classes.bak

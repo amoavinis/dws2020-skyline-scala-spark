@@ -6,7 +6,7 @@ import scala.annotation.tailrec
 import scala.collection.mutable.ArrayBuffer
 import scala.util.control.Breaks.{break, breakable}
 
-class CellGrid(rdd: RDD[Array[Double]], divisionType: Int) extends Serializable {
+class CellGrid(rdd: RDD[List[Double]], divisionType: Int) extends Serializable {
 
   var intervals: Array[Double] = Array()
   var bounds: List[List[Double]] = List()
@@ -55,8 +55,8 @@ class CustomPartitioner(numOfPartitions: Int) extends Partitioner {
 
 object SFSSkylineCalculation extends Serializable {
 
-  def calculate(a: Iterator[Array[Double]]): Iterator[Array[Double]] = {
-    var skyline = ArrayBuffer[Array[Double]]()
+  def calculate(a: Iterator[List[Double]]): Iterator[List[Double]] = {
+    var skyline = ArrayBuffer[List[Double]]()
     val array = a.toArray
     skyline += array(0)
     for(i <- 1 until array.length) {
@@ -81,34 +81,41 @@ object SFSSkylineCalculation extends Serializable {
     skyline.toIterator
   }
   
-  def addScore(array:Iterator[Array[Double]]): Iterator[(Array[Double], Double)] ={
-    array.map(x => (x, 0))
-      .map(x => {
-        var sum = 0.0
-        for (i<-0 to x._1.length - 1) {
-          sum += math.log(x._1(i) + 1)
+  def addScore(array:Iterator[List[Double]], scores: Map[List[Double], Int]): Iterator[(List[Double], Int)] ={
+    val arr = array.toArray
+    val result_scores = scala.collection.mutable.Map[List[Double], Int]()
+    var i = 0
+    for (x<-arr){
+      var score = 0
+      for (y<-arr){
+        if (dominationCondition.dominates(x, y)){
+          if (scores(y)==0) score += 1
+          else score += scores(y)
         }
-        (x._1, sum)
-      })
+      }
+      result_scores(x) = score
+      i+=1
+    }
+    val result = result_scores.map{case(k,v)=>Tuple2(k, v.toInt)}
+    result.iterator
   }
 
-  def sortByScore(iterator:Iterator[(Array[Double], Double)]): Iterator[(Array[Double], Double)] ={
-    var array = iterator.toArray
-    array.sortBy(x => - x._2)
-    return array.toIterator
+  def sortByScore(iterator:Iterator[(List[Double], Int)]): Iterator[(List[Double], Int)] ={
+    val array = iterator.toArray
+    val sorted_array = array.sortBy(x => - x._2)
+    sorted_array.toIterator
   }
 
-  def addScoreAndCalculate(x: Iterator[(Array[Double])]): Iterator[Array[Double]] ={
-    val score = addScore(x)
+  def addScoreAndCalculate(x: Iterator[List[Double]], scores: Map[List[Double], Int], k: Int): Iterator[(List[Double], Int)] ={
+    val score = addScore(x, scores)
     val sortedScore = sortByScore(score)
-    val result = calculate(sortedScore.map(x => x._1))
-    return result.take(5)
+    sortedScore.take(k)
   }
 }
 
 object dominationCondition extends Serializable {
-  def dominates(a: Array[Double], b:Array[Double]): Boolean = {
-    a.zip(b).forall(pair=>pair._1<=pair._2) && !a.deep.equals(b.deep)
+  def dominates(a: List[Double], b:List[Double]): Boolean = {
+    a.zip(b).forall(pair=>pair._1<=pair._2) && !a.toArray.deep.equals(b.toArray.deep)
   }
   def toBase(n: Int, b: Int): List[Double] ={
     @tailrec
@@ -119,42 +126,39 @@ object dominationCondition extends Serializable {
     loop(List(), n).reverse
   }
   def dominates(a: Int, b:Int, base: Int, dims: Int): Boolean ={
-    val upper = toBase(scala.math.pow(base, dims).toInt, base).length
+    val upper = toBase(scala.math.pow(base, dims).toInt, base).length - 1
     val a1 = toBase(a, base).toArray.reverse.padTo(upper, 0).reverse
     val b1 = toBase(b, base).toArray.reverse.padTo(upper, 0).reverse
-    a1.zip(b1).forall(pair=>pair._1.toString.toDouble<pair._2.toString.toDouble) && !a1.deep.equals(b1.deep)
+    val res = a1.zip(b1).forall(pair=>pair._1.toString.toDouble<pair._2.toString.toDouble) && !a1.deep.equals(b1.deep)
+    res
   }
 }
 
 object NonDominatedPartitions extends Serializable {
-  def calculate(partitions: RDD[Int], divisionType: Int, dimensions: Int): Array[Int] = {
-    val partitionsWithIndex = partitions.zipWithIndex().map(p=>(p._2, p._1))
-    var nonDominated: Array[Int] = Array()
-    val n = partitions.count()
-    for (i<-List.range(0, n)) {
-      var flag = true
-      for (j<-List.range(0, i)) {
-        if (dominationCondition.dominates(partitionsWithIndex.lookup(i).head,
-          partitionsWithIndex.lookup(j).head,
-          divisionType, dimensions)) {
-          flag = false
+  def calculate(partitions: Array[Int], divisionType: Int, dimensions: Int): Array[Int] = {
+    var dominatedCells: Array[Int] = Array()
+    for (c<-partitions){
+      var flag = false
+      for (c1<-partitions){
+        if (dominationCondition.dominates(c1, c, divisionType, dimensions) && !flag) {
+          dominatedCells = dominatedCells :+ c
+          flag = true
         }
       }
-      if (flag) nonDominated = nonDominated :+ i.toInt
     }
-    nonDominated
+    partitions.toSet.diff(dominatedCells.toSet).toArray
   }
 }
 
 object Skyline {
 
   def main(args: Array[String]): Unit ={
-    val sparkConf = new SparkConf().setMaster("local[*]").setAppName("Skyline Queries")
+    val sparkConf = new SparkConf().setMaster("local[4]").setAppName("Skyline Queries")
     val sc = new SparkContext(sparkConf)
 
-    val rdd = sc.textFile("gaussian.csv").map(x=>x.split(", ")).map(x => x.map( y => y.toDouble))
+    val rdd = sc.textFile("gaussian2.csv").map(x=>x.split(", ")).map(x => x.map( y => y.toDouble).toList)
 
-    val divisionType = 3
+    val divisionType = 2
 
     val grid = new CellGrid(rdd, divisionType)
     grid.makeGrid()
@@ -163,39 +167,77 @@ object Skyline {
 
     val partitions = rdd.map(p => grid.findPartition(Row.fromSeq(p))).distinct()
 
-    //val pointsWithPartition = rdd.zip(partitions)
-    //val nonEmptyPartitions = pointsWithPartition.map(p=>p._2).distinct()
-    val nonEmptyPartitions = sc.parallelize(List(0, 1, 2, 3))
+    /*val pointsWithPartition = rdd.zip(partitions)
+    val nonEmptyPartitions = pointsWithPartition.map(p=>p._2).distinct().collect()
 
     val nonDominatedPartitions = NonDominatedPartitions.calculate(nonEmptyPartitions, divisionType, dimensions)
-    nonDominatedPartitions.foreach(println)
-    //val filteredPoints = rdd.filter(p=>nonDominatedPartitions.contains(grid.findPartition(Row.fromSeq(p.toSeq))))
-    //println(filteredPoints.count())
+
+    val filteredPoints = rdd.filter(p=>nonDominatedPartitions.contains(grid.findPartition(Row.fromSeq(p.toSeq))))
+    println(filteredPoints.count())*/
 
     val partitionedFilteredPoints = rdd.map(x=>(grid.findPartition(Row.fromSeq(x)), x)).
       partitionBy(new CustomPartitioner(partitions.count().toInt)).map(p=>p._2)
 
     //List.range(0, grid.numPartitions).foreach(i=>println(df2.glom().collect()(i).length))
-
-    // Test for ALS algorithm //
     
-    // Select top k with the best score
-    val k = 5
+    val TASK = 1
+    
+    if (TASK==1) {
+      val rdd2 = rdd.mapPartitions(SFSSkylineCalculation.calculate)
+      val partialSkylinesALS = rdd2.collect()
+      val skylineALS = sc.parallelize(partialSkylinesALS).repartition(1).mapPartitions(SFSSkylineCalculation.calculate)
+      println("Default partitioning: number of skyline points: "+skylineALS.count())
+      skylineALS.foreach(println)
 
-    val rdd2 = rdd.mapPartitions(SFSSkylineCalculation.calculate)
-    val partialSkylines2 = rdd2.collect().take(k)
-    val skyline2 = sc.parallelize(partialSkylines2).repartition(1).mapPartitions(SFSSkylineCalculation.addScoreAndCalculate)
-    println("Default partitioning: number of local skylines: "+skyline2.count())
+      //skyline2.map(row => (row.toArray.mkString(" "))).saveAsTextFile("ALS")
 
-    //skyline2.map(row => (row.toArray.mkString(" "))).saveAsTextFile("ALS")
+      val rdd3 = partitionedFilteredPoints.mapPartitions(SFSSkylineCalculation.calculate)
+      val partialSkylinesGrid = rdd3.collect()
+      val skylineGrid = sc.parallelize(partialSkylinesGrid).repartition(1).mapPartitions(SFSSkylineCalculation.calculate)
+      println("Grid partitioning: number of skyline points: "+skylineGrid.count())
+      skylineGrid.foreach(println)
 
-    val rdd3 = partitionedFilteredPoints.mapPartitions(SFSSkylineCalculation.addScoreAndCalculate).collect().take(k)
-    val partialSkylines3 = sc.parallelize(rdd3, 1).repartition(1)
-    val skyline3 = partialSkylines3.mapPartitions(SFSSkylineCalculation.calculate)
-    println("Grid partitioning: number of local skylines: "+skyline3.count())
+    }
+    else if (TASK==2) {
+      // Select top k with the best score
+      val k = 3
 
-    //skyline2.foreach(x=>println(x.toList))
-    //skyline3.foreach(x=>println(x.toList))
+      val rdd2 = rdd.mapPartitions(x=>{
+        val x1 = x.toArray
+        val scores_init :Map[List[Double], Int] = x1.map(xs=>xs->0).toMap
+        SFSSkylineCalculation.addScoreAndCalculate(x1.iterator, scores_init, k)
+      })
+      val partialResultsALS = rdd2.collect()
+      //partialSkylines2.foreach(println)
+      val domination_topk_ALS = sc.parallelize(partialResultsALS).repartition(1)
+        .mapPartitions(x=>{
+          val scores :Map[List[Double], Int] = partialResultsALS.map(p=>p._1->p._2).toMap
+          SFSSkylineCalculation.addScoreAndCalculate(x.map(p=>p._1), scores, k)
+        }).map(p=>p._1)
+      println("Default partitioning: top-"+k+" domination score points: "+domination_topk_ALS.count())
+      domination_topk_ALS.foreach(println)
+
+      //skyline2.map(row => (row.toArray.mkString(" "))).saveAsTextFile("ALS")
+
+      val rdd3 = partitionedFilteredPoints.mapPartitions(x=>{
+        val x1 = x.toArray
+        val scores_init :Map[List[Double], Int] = x1.map(xs=>xs->0).toMap
+        SFSSkylineCalculation.addScoreAndCalculate(x1.iterator, scores_init, k)
+      })
+      val partialResultsGrid = rdd3.collect()
+      //partialResultsGrid.foreach(println)
+      val domination_top_k_Grid = sc.parallelize(partialResultsGrid).repartition(1).mapPartitions(x=>{
+        val scores :Map[List[Double], Int] = partialResultsGrid.map(p=>p._1->p._2).toMap
+        SFSSkylineCalculation.addScoreAndCalculate(x.map(p=>p._1), scores, k)
+      }).map(p=>p._1)
+      println("Grid partitioning: top-"+k+" domination score points: "+domination_top_k_Grid.count())
+      domination_top_k_Grid.foreach(println)
+      
+    }
+    else if (TASK==3) {
+      
+    }
+
 
     sc.stop()
   }
