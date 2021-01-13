@@ -86,11 +86,10 @@ object SFSSkylineCalculation extends Serializable {
     val result_scores = scala.collection.mutable.Map[List[Double], Int]()
     var i = 0
     for (x<-arr){
-      var score = 0
+      var score = 0//scores(x)
       for (y<-arr){
         if (dominationCondition.dominates(x, y)){
-          if (scores(y)==0) score += 1
-          else score += scores(y)
+          score += scores(y)+1
         }
       }
       result_scores(x) = score
@@ -153,12 +152,12 @@ object NonDominatedPartitions extends Serializable {
 object Skyline {
 
   def main(args: Array[String]): Unit ={
-    val sparkConf = new SparkConf().setMaster("local[4]").setAppName("Skyline Queries")
+    val sparkConf = new SparkConf().setMaster("local[8]").setAppName("Skyline Queries")
     val sc = new SparkContext(sparkConf)
+    sc.setLogLevel("ERROR")
+    val rdd = sc.textFile("gaussian.csv",  20).map(x=>x.split(", ")).map(x => x.map(y => y.toDouble).toList)
 
-    val rdd = sc.textFile("gaussian2.csv").map(x=>x.split(", ")).map(x => x.map( y => y.toDouble).toList)
-
-    val divisionType = 2
+    val divisionType = 8
 
     val grid = new CellGrid(rdd, divisionType)
     grid.makeGrid()
@@ -167,11 +166,23 @@ object Skyline {
 
     val partitions = rdd.map(p => grid.findPartition(Row.fromSeq(p)))
 
-    val partitionedPoints = rdd.map(x=>(grid.findPartition(Row.fromSeq(x)), x)).
-      partitionBy(new CustomPartitioner(partitions.distinct().count().toInt)).map(p=>p._2)
-    
-    val TASK = 1
-    
+    def removeDominatedPartitions(points: RDD[List[Double]], partitions: RDD[Int]): RDD[(Int, List[Double])] = {
+      val nonEmptyPartitions = partitions.distinct().collect()
+      val nonDominatedPartitions = NonDominatedPartitions.calculate(nonEmptyPartitions, divisionType, dimensions)
+      val pointsWithPartition: RDD[(Int, List[Double])] = partitions.zip(points)
+      val filteredPoints = pointsWithPartition.filter(p=>nonDominatedPartitions.contains(p._1))
+      filteredPoints
+    }
+
+    def normalizePartitions(partitionsWithPoints: RDD[(Int, List[Double])]): RDD[(Int, List[Double])] = {
+      val points = partitionsWithPoints.map(p=>p._2)
+      val partitionsMap = partitionsWithPoints.map(p=>p._1).distinct().zipWithIndex().collectAsMap()
+      val partitionsNormalized: RDD[Int] = partitionsWithPoints.map(_._1).map(p=>partitionsMap(p).toInt)
+      partitionsNormalized.zip(points)
+    }
+
+    val TASK = 2
+
     if (TASK==1) {
       val rdd2 = rdd.mapPartitions(SFSSkylineCalculation.calculate)
       val partialSkylinesALS = rdd2.collect()
@@ -182,18 +193,13 @@ object Skyline {
       //skyline2.map(row => (row.toArray.mkString(" "))).saveAsTextFile("ALS")
 
       // This is for exluding dominated partitions from the calculation
-      val pointsWithPartition = rdd.zip(partitions)
-      val nonEmptyPartitions = pointsWithPartition.map(p=>p._2).distinct().collect()
 
-      val nonDominatedPartitions = NonDominatedPartitions.calculate(nonEmptyPartitions, divisionType, dimensions)
-
-      val filteredPoints = rdd.filter(p=>nonDominatedPartitions.contains(grid.findPartition(Row.fromSeq(p))))
-
-      val partitionedFilteredPoints = filteredPoints.map(x=>(grid.findPartition(Row.fromSeq(x)), x)).
-        partitionBy(new CustomPartitioner(nonDominatedPartitions.length)).map(p=>p._2)
 
       // Grid calculation
-      val rdd3 = partitionedFilteredPoints.mapPartitions(SFSSkylineCalculation.calculate)
+      val filteredPoints = normalizePartitions(removeDominatedPartitions(rdd, partitions))
+      val partitionsNormalized = filteredPoints.map(p=>p._1)
+      val partitionedPoints = filteredPoints.partitionBy(new CustomPartitioner(partitionsNormalized.distinct().count().toInt)).map(p=>p._2)
+      val rdd3 = partitionedPoints.mapPartitions(SFSSkylineCalculation.calculate)
       val partialSkylinesGrid = rdd3.collect()
       val skylineGrid = sc.parallelize(partialSkylinesGrid).repartition(1).mapPartitions(SFSSkylineCalculation.calculate)
       println("Grid partitioning: number of skyline points: "+skylineGrid.count())
@@ -210,7 +216,7 @@ object Skyline {
         SFSSkylineCalculation.addScoreAndCalculate(x1.iterator, scores_init, k)
       })
       val partialResultsALS = rdd2.collect()
-      //partialSkylines2.foreach(println)
+
       val domination_topk_ALS = sc.parallelize(partialResultsALS).repartition(1)
         .mapPartitions(x=>{
           val scores :Map[List[Double], Int] = partialResultsALS.map(p=>p._1->p._2).toMap
@@ -220,24 +226,26 @@ object Skyline {
       domination_topk_ALS.foreach(println)
 
       //skyline2.map(row => (row.toArray.mkString(" "))).saveAsTextFile("ALS")
-
+      val filteredPoints = normalizePartitions(partitions.zip(rdd))
+      val partitionsNormalized = filteredPoints.map(p=>p._1)
+      val partitionedPoints = filteredPoints.partitionBy(new CustomPartitioner(partitionsNormalized.distinct().count().toInt)).map(p=>p._2)
       val rdd3 = partitionedPoints.mapPartitions(x=>{
         val x1 = x.toArray
         val scores_init :Map[List[Double], Int] = x1.map(xs=>xs->0).toMap
         SFSSkylineCalculation.addScoreAndCalculate(x1.iterator, scores_init, k)
       })
       val partialResultsGrid = rdd3.collect()
-      //partialResultsGrid.foreach(println)
+
       val domination_top_k_Grid = sc.parallelize(partialResultsGrid).repartition(1).mapPartitions(x=>{
         val scores :Map[List[Double], Int] = partialResultsGrid.map(p=>p._1->p._2).toMap
         SFSSkylineCalculation.addScoreAndCalculate(x.map(p=>p._1), scores, k)
       }).map(p=>p._1)
       println("Grid partitioning: top-"+k+" domination score points: "+domination_top_k_Grid.count())
       domination_top_k_Grid.foreach(println)
-      
+
     }
     else if (TASK==3) {
-      
+
     }
 
 

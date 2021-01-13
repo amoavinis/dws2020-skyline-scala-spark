@@ -43,19 +43,20 @@ def uniform(dim, n):
     return minmax.fit_transform(np.array(points))
 
 def write_to_file(points, distribution):
-    np.savetxt(distribution+"2.csv", points, delimiter=", ", fmt='%f')
+    np.savetxt(distribution+".csv", points, delimiter=", ", fmt='%f')
 
 #l = anticorrelated(5, 10000)
 #plt.scatter(l[:, 2], l[:, 1])
 #plt.show()
 
-def view():
-    data = pd.read_csv('gaussian2.csv', header=None).to_numpy()
+def view(dist):
+    data = pd.read_csv(dist+'.csv', header=None).to_numpy()
+    print(data.shape)
     plt.scatter(data[:, 0], data[:, 1])
     plt.show()
 
-#write_to_file(correlated(5, 1000000), "correlated")
-#write_to_file(anticorrelated(5, 1000000), "anticorrelated")
-#write_to_file(gaussian(2, 50), "gaussian")
-view()
-#write_to_file(uniform(5, 1000000), "uniform")
+#write_to_file(correlated(2, 100000), "correlated")
+#write_to_file(anticorrelated(2, 100000), "anticorrelated")
+write_to_file(gaussian(2, 100000), "gaussian")
+#write_to_file(uniform(2, 100000), "uniform")
+#view("uniform")
