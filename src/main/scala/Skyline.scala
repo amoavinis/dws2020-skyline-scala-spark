@@ -246,6 +246,8 @@ object Skyline {
 
       // This is for exluding dominated partitions from the calculation
 
+      val duration_default = (System.nanoTime - t1) / 1e9d
+      val t2 = System.nanoTime
 
       // Grid calculation
       val filteredPoints = normalizePartitions(removeDominatedPartitions(rdd, partitions))
@@ -256,6 +258,8 @@ object Skyline {
       val skylineGrid = sc.parallelize(partialSkylinesGrid).repartition(1).mapPartitions(SFSkylineCalculation.calculate)
       println("Grid partitioning: number of skyline points: "+skylineGrid.count())
       skylineGrid.sortBy(p=>p.head).foreach(println)
+      
+      val duration_grid = (System.nanoTime - t2) / 1e9d
 
     }
     else if (TASK==2) {
@@ -315,8 +319,8 @@ object Skyline {
       domination_topk_Grid.sortBy(p=>p.head).foreach(println)
     }
     
-    val duration = (System.nanoTime - t1) / 1e9d
-    print("Duration = " + duration + " seconds")
+    print("Duration Default = " + duration_default + " seconds")
+    print("Duration Grid = " + duration_grid + " seconds")
     
     sc.stop()
   }
