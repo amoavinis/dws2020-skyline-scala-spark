@@ -165,6 +165,7 @@ object Skyline {
     val sparkConf = new SparkConf().setMaster("local[8]").setAppName("Skyline Queries")
     val sc = new SparkContext(sparkConf)
     sc.setLogLevel("ERROR")
+    val t1 = System.nanoTime
     val rdd = sc.textFile("gaussian.csv",  5).map(x=>x.split(", ")).map(x => x.map(y => y.toDouble).toList)
 
     val divisionType = 5
@@ -313,8 +314,10 @@ object Skyline {
       println("Grid partitioning: top-"+k+" domination score points: ")
       domination_topk_Grid.sortBy(p=>p.head).foreach(println)
     }
-
-
+    
+    val duration = (System.nanoTime - t1) / 1e9d
+    print("Duration = " + duration + " seconds")
+    
     sc.stop()
   }
 }
