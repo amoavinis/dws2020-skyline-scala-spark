@@ -81,36 +81,6 @@ object SFSkylineCalculation extends Serializable {
     skyline.toIterator
   }
 
-  def addScore(array:Iterator[List[Double]], scores: Map[List[Double], Int]): Iterator[(List[Double], Int)] ={
-    val arr = array.toArray
-    val result_scores = scala.collection.mutable.Map[List[Double], Int]()
-    var i = 0
-    for (x<-arr){
-      var score = 0//scores(x)
-      for (y<-arr){
-        if (dominationCondition.dominates(x, y)){
-          score += scores(y)+1
-        }
-      }
-      result_scores(x) = score
-      i+=1
-    }
-    val result = result_scores.map{case(k,v)=>Tuple2(k, v.toInt)}
-    result.iterator
-  }
-
-  def sortByScore(iterator:Iterator[(List[Double], Int)]): Iterator[(List[Double], Int)] ={
-    val array = iterator.toArray
-    val sorted_array = array.sortBy(x => - x._2)
-    sorted_array.toIterator
-  }
-
-  def addScoreAndCalculate(x: Iterator[List[Double]], scores: Map[List[Double], Int], k: Int): Iterator[(List[Double], Int)] ={
-    val score = addScore(x, scores)
-    val sortedScore = sortByScore(score)
-    sortedScore.take(k)
-  }
-
   def dominationScoreOfPoint(x: Iterator[List[Double]], points: List[List[Double]]): Iterator[(List[Double], Int)] = {
     var result: List[Int] = List()
     val x1 = x.toList
@@ -164,7 +134,7 @@ object Skyline {
   def main(args: Array[String]): Unit ={
     val sparkConf = new SparkConf().setMaster("local[8]").setAppName("Skyline Queries")
     val sc = new SparkContext(sparkConf)
-    sc.setLogLevel("ERROR")
+    //sc.setLogLevel("ERROR")
     val rdd = sc.textFile("gaussian.csv",  5).map(x=>x.split(", ")).map(x => x.map(y => y.toDouble).toList)
 
     val divisionType = 5
@@ -241,11 +211,6 @@ object Skyline {
       println("Default partitioning: number of skyline points: "+skylineALS.count())
       skylineALS.sortBy(p=>p.head).foreach(println)
 
-      //skyline2.map(row => (row.toArray.mkString(" "))).saveAsTextFile("ALS")
-
-      // This is for exluding dominated partitions from the calculation
-
-
       // Grid calculation
       val filteredPoints = normalizePartitions(removeDominatedPartitions(rdd, partitions))
       val partitionsNormalized = filteredPoints.map(p=>p._1)
@@ -265,7 +230,6 @@ object Skyline {
       println("Default partitioning: top-"+k+" domination score points: ")
       domination_topk_ALS.sortBy(p=>p.head).foreach(println)
 
-      //skyline2.map(row => (row.toArray.mkString(" "))).saveAsTextFile("ALS")
       val filteredPoints = normalizePartitions(partitions.zip(rdd))
       val partitionsNormalized = filteredPoints.map(p=>p._1)
       val partitionedPoints = filteredPoints.partitionBy(new CustomPartitioner(partitionsNormalized.distinct().count().toInt)).map(p=>p._2)
@@ -279,18 +243,6 @@ object Skyline {
       // Select top k with the best score
       val k = 3
 
-      /*val rdd2 = rdd.mapPartitions(x=>{
-        val x1 = x.toArray
-        val scores_init :Map[List[Double], Int] = x1.map(xs=>xs->0).toMap
-        SFSkylineCalculation.addScoreAndCalculate(x1.iterator, scores_init, k, TASK)
-      })
-      val partialResultsALS = rdd2.collect()
-
-      val domination_topk_ALS = sc.parallelize(partialResultsALS).repartition(1)
-        .mapPartitions(x=>{
-          val scores :Map[List[Double], Int] = partialResultsALS.map(p=>p._1->p._2).toMap
-          SFSkylineCalculation.addScoreAndCalculate(x.map(p=>p._1), scores, k, TASK)
-        }).map(p=>p._1)*/
       val domination_topk_ALS = topK(rdd, k, grid_algo = false, from_skyline = true)
       println("Default partitioning: top-"+k+" domination score points: ")
       domination_topk_ALS.sortBy(p=>p.head).foreach(println)
@@ -298,17 +250,7 @@ object Skyline {
       val filteredPoints = normalizePartitions(partitions.zip(rdd))
       val partitionsNormalized = filteredPoints.map(p=>p._1)
       val partitionedPoints = filteredPoints.partitionBy(new CustomPartitioner(partitionsNormalized.distinct().count().toInt)).map(p=>p._2)
-      /*val rdd3 = partitionedPoints.mapPartitions(x=>{
-        val x1 = x.toArray
-        val scores_init :Map[List[Double], Int] = x1.map(xs=>xs->0).toMap
-        SFSkylineCalculation.addScoreAndCalculate(x1.iterator, scores_init, k, TASK)
-      })
-      val partialResultsGrid = rdd3.collect()
 
-      val domination_topk_Grid = sc.parallelize(partialResultsGrid).repartition(1).mapPartitions(x=>{
-        val scores :Map[List[Double], Int] = partialResultsGrid.map(p=>p._1->p._2).toMap
-        SFSkylineCalculation.addScoreAndCalculate(x.map(p=>p._1), scores, k)
-      }).map(p=>p._1)*/
       val domination_topk_Grid = topK(partitionedPoints, k, grid_algo = true, from_skyline = true)
       println("Grid partitioning: top-"+k+" domination score points: ")
       domination_topk_Grid.sortBy(p=>p.head).foreach(println)
