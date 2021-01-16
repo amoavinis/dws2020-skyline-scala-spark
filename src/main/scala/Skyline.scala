@@ -165,8 +165,8 @@ object Skyline {
     val sparkConf = new SparkConf().setMaster("local[8]").setAppName("Skyline Queries")
     val sc = new SparkContext(sparkConf)
     sc.setLogLevel("ERROR")
-    val t1 = System.nanoTime
-    val rdd = sc.textFile("gaussian.csv",  5).map(x=>x.split(", ")).map(x => x.map(y => y.toDouble).toList)
+
+    val rdd = sc.textFile("uniform.csv",  40).map(x=>x.split(", ")).map(x => x.map(y => y.toDouble).toList)
 
     val divisionType = 5
 
@@ -236,18 +236,20 @@ object Skyline {
     val TASK = 2
 
     if (TASK==1) {
+      val t1 = System.nanoTime
       val rdd2 = rdd.mapPartitions(SFSkylineCalculation.calculate)
       val partialSkylinesALS = rdd2.collect()
       val skylineALS = sc.parallelize(partialSkylinesALS).repartition(1).mapPartitions(SFSkylineCalculation.calculate)
       println("Default partitioning: number of skyline points: "+skylineALS.count())
-      skylineALS.sortBy(p=>p.head).foreach(println)
+      val duration1 = (System.nanoTime - t1) / 1e9d
+      println("Duration = " + duration1 + " seconds")
+      //skylineALS.sortBy(p=>p.head).foreach(println)
 
       //skyline2.map(row => (row.toArray.mkString(" "))).saveAsTextFile("ALS")
 
       // This is for exluding dominated partitions from the calculation
-
-
       // Grid calculation
+      val t2 = System.nanoTime
       val filteredPoints = normalizePartitions(removeDominatedPartitions(rdd, partitions))
       val partitionsNormalized = filteredPoints.map(p=>p._1)
       val partitionedPoints = filteredPoints.partitionBy(new CustomPartitioner(partitionsNormalized.distinct().count().toInt)).map(p=>p._2)
@@ -255,18 +257,24 @@ object Skyline {
       val partialSkylinesGrid = rdd3.collect()
       val skylineGrid = sc.parallelize(partialSkylinesGrid).repartition(1).mapPartitions(SFSkylineCalculation.calculate)
       println("Grid partitioning: number of skyline points: "+skylineGrid.count())
-      skylineGrid.sortBy(p=>p.head).foreach(println)
+      val duration2 = (System.nanoTime - t2) / 1e9d
+      println("Duration = " + duration2 + " seconds")
+      //skylineGrid.sortBy(p=>p.head).foreach(println)
 
     }
     else if (TASK==2) {
       // Select top k with the best score
       val k = 3
-
+      val t1 = System.nanoTime
       val domination_topk_ALS = topK(rdd, k, grid_algo = false, from_skyline = false)
       println("Default partitioning: top-"+k+" domination score points: ")
       domination_topk_ALS.sortBy(p=>p.head).foreach(println)
+      val duration1 = (System.nanoTime - t1) / 1e9d
+      println("Duration = " + duration1 + " seconds")
 
       //skyline2.map(row => (row.toArray.mkString(" "))).saveAsTextFile("ALS")
+
+      val t2 = System.nanoTime
       val filteredPoints = normalizePartitions(partitions.zip(rdd))
       val partitionsNormalized = filteredPoints.map(p=>p._1)
       val partitionedPoints = filteredPoints.partitionBy(new CustomPartitioner(partitionsNormalized.distinct().count().toInt)).map(p=>p._2)
@@ -274,49 +282,34 @@ object Skyline {
       val domination_topk_Grid = topK(partitionedPoints, k, grid_algo = true, from_skyline = false)
       println("Grid partitioning: top-"+k+" domination score points: ")
       domination_topk_Grid.sortBy(p=>p.head).foreach(println)
+      val duration2 = (System.nanoTime - t2) / 1e9d
+      println("Duration = " + duration2 + " seconds")
 
     }
     else if (TASK==3) {
       // Select top k with the best score
       val k = 3
 
-      /*val rdd2 = rdd.mapPartitions(x=>{
-        val x1 = x.toArray
-        val scores_init :Map[List[Double], Int] = x1.map(xs=>xs->0).toMap
-        SFSkylineCalculation.addScoreAndCalculate(x1.iterator, scores_init, k, TASK)
-      })
-      val partialResultsALS = rdd2.collect()
-
-      val domination_topk_ALS = sc.parallelize(partialResultsALS).repartition(1)
-        .mapPartitions(x=>{
-          val scores :Map[List[Double], Int] = partialResultsALS.map(p=>p._1->p._2).toMap
-          SFSkylineCalculation.addScoreAndCalculate(x.map(p=>p._1), scores, k, TASK)
-        }).map(p=>p._1)*/
+      val t1 = System.nanoTime
       val domination_topk_ALS = topK(rdd, k, grid_algo = false, from_skyline = true)
       println("Default partitioning: top-"+k+" domination score points: ")
       domination_topk_ALS.sortBy(p=>p.head).foreach(println)
+      val duration1 = (System.nanoTime - t1) / 1e9d
+      println("Duration = " + duration1 + " seconds")
 
+      val t2 = System.nanoTime
       val filteredPoints = normalizePartitions(partitions.zip(rdd))
       val partitionsNormalized = filteredPoints.map(p=>p._1)
       val partitionedPoints = filteredPoints.partitionBy(new CustomPartitioner(partitionsNormalized.distinct().count().toInt)).map(p=>p._2)
-      /*val rdd3 = partitionedPoints.mapPartitions(x=>{
-        val x1 = x.toArray
-        val scores_init :Map[List[Double], Int] = x1.map(xs=>xs->0).toMap
-        SFSkylineCalculation.addScoreAndCalculate(x1.iterator, scores_init, k, TASK)
-      })
-      val partialResultsGrid = rdd3.collect()
 
-      val domination_topk_Grid = sc.parallelize(partialResultsGrid).repartition(1).mapPartitions(x=>{
-        val scores :Map[List[Double], Int] = partialResultsGrid.map(p=>p._1->p._2).toMap
-        SFSkylineCalculation.addScoreAndCalculate(x.map(p=>p._1), scores, k)
-      }).map(p=>p._1)*/
       val domination_topk_Grid = topK(partitionedPoints, k, grid_algo = true, from_skyline = true)
       println("Grid partitioning: top-"+k+" domination score points: ")
       domination_topk_Grid.sortBy(p=>p.head).foreach(println)
+      val duration2 = (System.nanoTime - t2) / 1e9d
+      println("Duration = " + duration2 + " seconds")
     }
     
-    val duration = (System.nanoTime - t1) / 1e9d
-    print("Duration = " + duration + " seconds")
+
     
     sc.stop()
   }

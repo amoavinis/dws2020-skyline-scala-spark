@@ -56,7 +56,7 @@ def view(dist):
     plt.show()
 
 #write_to_file(correlated(2, 100000), "correlated")
-#write_to_file(anticorrelated(2, 100000), "anticorrelated")
-write_to_file(gaussian(2, 100000), "gaussian")
-#write_to_file(uniform(2, 100000), "uniform")
+#write_to_file(anticorrelated(5, 1000000), "anticorrelated")
+#write_to_file(gaussian(5, 1000000), "gaussian")
+write_to_file(uniform(5, 1000000), "uniform")
 #view("uniform")
