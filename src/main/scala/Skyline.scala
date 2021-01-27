@@ -77,7 +77,7 @@ class CustomPartitioner(numOfPartitions: Int) extends Partitioner {
  */
 object SFSkylineCalculation extends Serializable {
   /**
-   * THis function calculates the skyline for an iterator that expresses a partition.
+   * This function calculates the skyline for an iterator that expresses a partition.
    * @param a The iterator input
    * @return The local skyline.
    */
@@ -263,7 +263,7 @@ object Skyline {
        * @param rdd1 The temporary point RDD
        * @param k The k parameter
        * @param acc The accumulator
-       * @return THe topk points
+       * @return The topk points
        */
       @tailrec
       def loop(rdd1: RDD[List[Double]], k: Int, acc: List[List[Double]]): List[List[Double]]={
